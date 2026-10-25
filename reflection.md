@@ -22,6 +22,12 @@ An Owner has many Pets and a Pet has many Tasks. The Scheduler reads constraints
 - Did your design change during implementation?
 - If yes, describe at least one change and why you made it.
 
+Yes. When I reviewed the skeleton, I found three relationships my initial design was missing, and I changed the design to fill them in:
+
+- **Tasks now know which pet they belong to.** The Scheduler merges every pet's tasks into one list, which lost track of whose task was whose. A plan saying "Walk – 30 min" is useless with two dogs. I added a `pet_name` field to `Task`, which `Pet.add_task()` fills in.
+- **The plan now stores times and reasons.** `DailyPlan` used to hold a plain list of tasks, so it had nowhere to record when each task happens or why it was chosen or skipped, and `explain()` had nothing to work with. I added a small `ScheduledItem` class (task, start time, reason). `DailyPlan` now holds lists of these instead of raw tasks.
+- **Tasks now repeat and have due dates.** Nothing in the original design said whether a task was due *today*, and the `completed` flag never reset, so a walk done today would still count as done tomorrow. I replaced `completed` with `frequency`, `due_date` and `last_completed`, plus an `is_due(day)` method. `Scheduler.build_daily_plan()` now takes a date, so it only plans tasks due that day.
+
 ---
 
 ## 2. Scheduling Logic and Tradeoffs

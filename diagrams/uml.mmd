@@ -28,25 +28,35 @@ classDiagram
         +int duration_minutes
         +str priority
         +str preferred_time
-        +bool completed
-        +mark_complete() None
+        +str pet_name
+        +str frequency
+        +date due_date
+        +date last_completed
+        +mark_complete(date day) None
+        +is_due(date day) bool
         +priority_score() int
     }
 
     class Scheduler {
         +Owner owner
-        +build_daily_plan() DailyPlan
+        +build_daily_plan(date day) DailyPlan
         +sort_by_priority(list~Task~ tasks) list~Task~
         +fits_in_time(Task task, int minutes_left) bool
         +apply_preferences(list~Task~ tasks) list~Task~
     }
 
+    class ScheduledItem {
+        +Task task
+        +str start_time
+        +str reason
+    }
+
     class DailyPlan {
         +date date
-        +list~Task~ scheduled
-        +list~Task~ skipped
+        +list~ScheduledItem~ scheduled
+        +list~ScheduledItem~ skipped
         +int total_minutes
-        +get_todays_tasks() list~Task~
+        +get_todays_tasks() list~ScheduledItem~
         +explain() str
     }
 
@@ -54,4 +64,6 @@ classDiagram
     Pet "1" --> "*" Task : has
     Scheduler --> Owner : reads constraints from
     Scheduler ..> DailyPlan : creates
-    DailyPlan --> "*" Task : contains
+    DailyPlan "1" --> "*" ScheduledItem : contains
+    ScheduledItem --> "1" Task : wraps
+    Task ..> Pet : pet_name refers to

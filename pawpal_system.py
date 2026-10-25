@@ -19,10 +19,17 @@ class Task:
     duration_minutes: int
     priority: str = "medium"  # "low" | "medium" | "high"
     preferred_time: str | None = None  # e.g. "08:00" or "morning"
-    completed: bool = False
+    pet_name: str | None = None  # set by Pet.add_task so the plan knows whose task it is
+    frequency: str = "daily"  # "daily" | "weekly" | "once"
+    due_date: date | None = None  # used when frequency is "once"
+    last_completed: date | None = None
 
-    def mark_complete(self) -> None:
-        """Mark this task as done."""
+    def mark_complete(self, day: date) -> None:
+        """Record that this task was done on the given day."""
+        raise NotImplementedError
+
+    def is_due(self, day: date) -> bool:
+        """Return True if this task needs doing on the given day (based on frequency)."""
         raise NotImplementedError
 
     def priority_score(self) -> int:
@@ -40,7 +47,7 @@ class Pet:
     tasks: list[Task] = field(default_factory=list)
 
     def add_task(self, task: Task) -> None:
-        """Attach a care task to this pet."""
+        """Attach a care task to this pet and set its pet_name."""
         raise NotImplementedError
 
     def schedule_walk(self, time: str, duration: int, priority: str = "medium") -> Task:
@@ -71,16 +78,25 @@ class Owner:
 
 
 @dataclass
+class ScheduledItem:
+    """One entry in a DailyPlan: a task, when it happens, and why."""
+
+    task: Task
+    start_time: str | None  # None when the task was skipped
+    reason: str
+
+
+@dataclass
 class DailyPlan:
     """The Scheduler's output: what was scheduled today, what was skipped, and why."""
 
     date: date
-    scheduled: list[Task] = field(default_factory=list)
-    skipped: list[Task] = field(default_factory=list)
+    scheduled: list[ScheduledItem] = field(default_factory=list)
+    skipped: list[ScheduledItem] = field(default_factory=list)
     total_minutes: int = 0
 
-    def get_todays_tasks(self) -> list[Task]:
-        """Return the tasks scheduled for today, in order."""
+    def get_todays_tasks(self) -> list[ScheduledItem]:
+        """Return the items scheduled for today, in start-time order."""
         raise NotImplementedError
 
     def explain(self) -> str:
@@ -94,8 +110,8 @@ class Scheduler:
     def __init__(self, owner: Owner) -> None:
         self.owner = owner
 
-    def build_daily_plan(self) -> DailyPlan:
-        """Choose and order today's tasks based on time, priority, and preferences."""
+    def build_daily_plan(self, day: date) -> DailyPlan:
+        """Choose and order the tasks due on `day` based on time, priority, and preferences."""
         raise NotImplementedError
 
     def sort_by_priority(self, tasks: list[Task]) -> list[Task]:
