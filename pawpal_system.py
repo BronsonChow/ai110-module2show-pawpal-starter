@@ -7,7 +7,28 @@ filled in during implementation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, time
+from enum import Enum
+
+
+class Priority(Enum):
+    """Task priority. The value is the sort score (higher = more important)."""
+
+    LOW = 1
+    MEDIUM = 2
+    HIGH = 3
+
+
+@dataclass
+class TimeWindow:
+    """A block of the day when the owner is free, e.g. 07:00-09:00."""
+
+    start: time
+    end: time
+
+    def minutes(self) -> int:
+        """Return the length of this window in minutes."""
+        raise NotImplementedError
 
 
 @dataclass
@@ -17,8 +38,8 @@ class Task:
     title: str
     category: str
     duration_minutes: int
-    priority: str = "medium"  # "low" | "medium" | "high"
-    preferred_time: str | None = None  # e.g. "08:00" or "morning"
+    priority: Priority = Priority.MEDIUM
+    preferred_time: time | None = None
     pet_name: str | None = None  # set by Pet.add_task so the plan knows whose task it is
     frequency: str = "daily"  # "daily" | "weekly" | "once"
     due_date: date | None = None  # used when frequency is "once"
@@ -50,7 +71,7 @@ class Pet:
         """Attach a care task to this pet and set its pet_name."""
         raise NotImplementedError
 
-    def schedule_walk(self, time: str, duration: int, priority: str = "medium") -> Task:
+    def schedule_walk(self, at: time, duration: int, priority: Priority = Priority.MEDIUM) -> Task:
         """Create a walk task, attach it to this pet, and return it."""
         raise NotImplementedError
 
@@ -64,7 +85,7 @@ class Owner:
     """The pet owner, their pets, and their scheduling constraints."""
 
     name: str
-    available_minutes: int
+    available_windows: list[TimeWindow] = field(default_factory=list)
     preferences: dict = field(default_factory=dict)
     pets: list[Pet] = field(default_factory=list)
 
@@ -76,13 +97,17 @@ class Owner:
         """Return every task across all of this owner's pets."""
         raise NotImplementedError
 
+    def total_available_minutes(self) -> int:
+        """Return the total free time across all available windows."""
+        raise NotImplementedError
+
 
 @dataclass
 class ScheduledItem:
     """One entry in a DailyPlan: a task, when it happens, and why."""
 
     task: Task
-    start_time: str | None  # None when the task was skipped
+    start_time: time | None  # None when the task was skipped
     reason: str
 
 
@@ -111,17 +136,25 @@ class Scheduler:
         self.owner = owner
 
     def build_daily_plan(self, day: date) -> DailyPlan:
-        """Choose and order the tasks due on `day` based on time, priority, and preferences."""
+        """Build the plan for `day` in a fixed order of steps:
+
+        1. Keep only tasks that are due on `day`.
+        2. Sort them by priority (sort_by_priority).
+        3. Place each task into the first time window it fits (fits_in_time);
+           tasks that fit nowhere are skipped.
+        4. Order the chosen tasks by preference (apply_preferences).
+           Preferences never bring back a skipped task.
+        """
         raise NotImplementedError
 
     def sort_by_priority(self, tasks: list[Task]) -> list[Task]:
-        """Return tasks ordered from highest to lowest priority."""
+        """Return a new list ordered from highest to lowest priority."""
         raise NotImplementedError
 
-    def fits_in_time(self, task: Task, minutes_left: int) -> bool:
-        """Return True if the task fits in the remaining available time."""
+    def fits_in_time(self, task: Task, window: TimeWindow, minutes_used: int) -> bool:
+        """Return True if the task fits in what is left of the given window."""
         raise NotImplementedError
 
-    def apply_preferences(self, tasks: list[Task]) -> list[Task]:
-        """Adjust task order/selection using the owner's preferences."""
+    def apply_preferences(self, items: list[ScheduledItem]) -> list[ScheduledItem]:
+        """Return a new list of the chosen items, reordered by preferred time and owner preferences."""
         raise NotImplementedError

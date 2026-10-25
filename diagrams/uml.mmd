@@ -1,15 +1,29 @@
 classDiagram
-    %% PawPal+ initial design
+    %% PawPal+ design
     %% Core actions: add a pet (Owner), schedule a walk / any task (Pet + Task),
     %% see today's tasks (Scheduler -> DailyPlan)
 
+    class Priority {
+        <<enumeration>>
+        LOW = 1
+        MEDIUM = 2
+        HIGH = 3
+    }
+
+    class TimeWindow {
+        +time start
+        +time end
+        +minutes() int
+    }
+
     class Owner {
         +str name
-        +int available_minutes
+        +list~TimeWindow~ available_windows
         +dict preferences
         +list~Pet~ pets
         +add_pet(Pet pet) None
         +get_all_tasks() list~Task~
+        +total_available_minutes() int
     }
 
     class Pet {
@@ -18,7 +32,7 @@ classDiagram
         +int age
         +list~Task~ tasks
         +add_task(Task task) None
-        +schedule_walk(str time, int duration, str priority) Task
+        +schedule_walk(time at, int duration, Priority priority) Task
         +get_tasks() list~Task~
     }
 
@@ -26,8 +40,8 @@ classDiagram
         +str title
         +str category
         +int duration_minutes
-        +str priority
-        +str preferred_time
+        +Priority priority
+        +time preferred_time
         +str pet_name
         +str frequency
         +date due_date
@@ -41,13 +55,13 @@ classDiagram
         +Owner owner
         +build_daily_plan(date day) DailyPlan
         +sort_by_priority(list~Task~ tasks) list~Task~
-        +fits_in_time(Task task, int minutes_left) bool
-        +apply_preferences(list~Task~ tasks) list~Task~
+        +fits_in_time(Task task, TimeWindow window, int minutes_used) bool
+        +apply_preferences(list~ScheduledItem~ items) list~ScheduledItem~
     }
 
     class ScheduledItem {
         +Task task
-        +str start_time
+        +time start_time
         +str reason
     }
 
@@ -61,9 +75,11 @@ classDiagram
     }
 
     Owner "1" --> "*" Pet : owns
+    Owner "1" --> "*" TimeWindow : free during
     Pet "1" --> "*" Task : has
+    Task --> Priority : uses
+    Task ..> Pet : pet_name refers to
     Scheduler --> Owner : reads constraints from
     Scheduler ..> DailyPlan : creates
     DailyPlan "1" --> "*" ScheduledItem : contains
     ScheduledItem --> "1" Task : wraps
-    Task ..> Pet : pet_name refers to

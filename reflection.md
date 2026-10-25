@@ -28,6 +28,16 @@ Yes. When I reviewed the skeleton, I found three relationships my initial design
 - **The plan now stores times and reasons.** `DailyPlan` used to hold a plain list of tasks, so it had nowhere to record when each task happens or why it was chosen or skipped, and `explain()` had nothing to work with. I added a small `ScheduledItem` class (task, start time, reason). `DailyPlan` now holds lists of these instead of raw tasks.
 - **Tasks now repeat and have due dates.** Nothing in the original design said whether a task was due *today*, and the `completed` flag never reset, so a walk done today would still count as done tomorrow. I replaced `completed` with `frequency`, `due_date` and `last_completed`, plus an `is_due(day)` method. `Scheduler.build_daily_plan()` now takes a date, so it only plans tasks due that day.
 
+I also found several spots where the scheduling logic would have caused problems, and I changed the design to avoid them:
+
+- **Priority is now an enum instead of free text.** With `priority` as a string, a typo like `"hgih"` would quietly sort wrong. I added a `Priority` enum (LOW = 1, MEDIUM = 2, HIGH = 3), so invalid values fail immediately and the enum value doubles as the sort score.
+- **Times now use one format.** `preferred_time` could be `"08:00"` or `"morning"`, and those can't be compared or sorted. `preferred_time` and `ScheduledItem.start_time` now both use Python's `datetime.time`.
+- **The order of the scheduling steps is now fixed.** It wasn't clear whether preferences ran before or after the priority sort, so preferences could undo it. `build_daily_plan()` now always runs in this order: keep tasks that are due, sort by priority, fit tasks into the free time, then order the chosen tasks by preference. Preferences can reorder tasks but can never bring back one that was skipped for lack of time.
+- **Free time is now a list of time windows instead of one number.** A single `available_minutes` value couldn't say "free 7–9am and 6–8pm". I added a `TimeWindow` class, and `Owner` now has `available_windows`, so the scheduler can give tasks real start times. `fits_in_time()` checks a task against a specific window.
+- **Sorting methods return new lists.** `sort_by_priority()` and `apply_preferences()` now return new lists, so building a plan never reorders a pet's own task list.
+
+One thing I deliberately kept is greedy, priority-first scheduling. A long high-priority task can still crowd out several shorter, lower-priority ones. I accepted that because it's simple, predictable and easy to explain to the owner.
+
 ---
 
 ## 2. Scheduling Logic and Tradeoffs
