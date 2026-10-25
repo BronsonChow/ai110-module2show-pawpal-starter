@@ -7,6 +7,16 @@
 - Briefly describe your initial UML design.
 - What classes did you include, and what responsibilities did you assign to each?
 
+My initial design is built around three core actions: adding a pet, scheduling a walk, and seeing today's tasks. It uses five classes:
+
+- **Owner** – Holds the owner's pets and their constraints: how many minutes they have available and their preferences (for example, morning walks). Handles *adding a pet*.
+- **Pet** – Stores basic pet info and the pet's list of care tasks. Handles *scheduling a walk* (or any other task) by creating a Task and attaching it to the pet.
+- **Task** – A single care item such as a walk, feeding, meds, enrichment, or grooming. It stores the category, duration, priority, preferred time, and whether it is complete.
+- **Scheduler** – Applies the constraints. It collects every task from the owner's pets, sorts them by priority, applies owner preferences, and drops tasks that don't fit in the available time.
+- **DailyPlan** – The Scheduler's output and how the user *sees today's tasks*. It lists the scheduled and skipped tasks and explains why the plan was chosen.
+
+An Owner has many Pets and a Pet has many Tasks. The Scheduler reads constraints from the Owner and creates a DailyPlan. I kept the scheduling logic in one class, the Scheduler, so Task only stores data and the plan is easy to explain and test.
+
 **b. Design changes**
 
 - Did your design change during implementation?

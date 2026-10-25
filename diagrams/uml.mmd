@@ -1,15 +1,57 @@
 classDiagram
-    %% Replace the placeholders below with your actual classes, attributes, methods, and relationships.
-    %% Keep this file updated so it matches your final implementation.
+    %% PawPal+ initial design
+    %% Core actions: add a pet (Owner), schedule a walk / any task (Pet + Task),
+    %% see today's tasks (Scheduler -> DailyPlan)
 
-    class ClassName {
-        +type attribute
-        +method() returnType
+    class Owner {
+        +str name
+        +int available_minutes
+        +dict preferences
+        +list~Pet~ pets
+        +add_pet(Pet pet) None
+        +get_all_tasks() list~Task~
     }
 
-    class AnotherClass {
-        +type attribute
-        +method() returnType
+    class Pet {
+        +str name
+        +str species
+        +int age
+        +list~Task~ tasks
+        +add_task(Task task) None
+        +schedule_walk(str time, int duration, str priority) Task
+        +get_tasks() list~Task~
     }
 
-    ClassName --> AnotherClass : relationship
+    class Task {
+        +str title
+        +str category
+        +int duration_minutes
+        +str priority
+        +str preferred_time
+        +bool completed
+        +mark_complete() None
+        +priority_score() int
+    }
+
+    class Scheduler {
+        +Owner owner
+        +build_daily_plan() DailyPlan
+        +sort_by_priority(list~Task~ tasks) list~Task~
+        +fits_in_time(Task task, int minutes_left) bool
+        +apply_preferences(list~Task~ tasks) list~Task~
+    }
+
+    class DailyPlan {
+        +date date
+        +list~Task~ scheduled
+        +list~Task~ skipped
+        +int total_minutes
+        +get_todays_tasks() list~Task~
+        +explain() str
+    }
+
+    Owner "1" --> "*" Pet : owns
+    Pet "1" --> "*" Task : has
+    Scheduler --> Owner : reads constraints from
+    Scheduler ..> DailyPlan : creates
+    DailyPlan --> "*" Task : contains
