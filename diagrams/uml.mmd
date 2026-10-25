@@ -22,6 +22,7 @@ classDiagram
         +dict preferences
         +list~Pet~ pets
         +add_pet(Pet pet) None
+        +get_pet(str name) Pet
         +get_all_tasks() list~Task~
         +total_available_minutes() int
     }
@@ -47,22 +48,26 @@ classDiagram
         +date due_date
         +date last_completed
         +mark_complete(date day) None
+        +is_completed_on(date day) bool
         +is_due(date day) bool
         +priority_score() int
     }
 
     class Scheduler {
         +Owner owner
+        +get_all_tasks() list~Task~
+        +get_due_tasks(date day) list~Task~
         +build_daily_plan(date day) DailyPlan
         +sort_by_priority(list~Task~ tasks) list~Task~
         +fits_in_time(Task task, TimeWindow window, int minutes_used) bool
-        +apply_preferences(list~ScheduledItem~ items) list~ScheduledItem~
+        +apply_preferences(list~Task~ tasks) list~Task~
     }
 
     class ScheduledItem {
         +Task task
         +time start_time
         +str reason
+        +end_time() time
     }
 
     class DailyPlan {
