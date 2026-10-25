@@ -67,7 +67,17 @@ pytest --cov
 Sample test output:
 
 ```
-# Paste your pytest output here
+Today's Schedule - Sunday, October 25, 2026
+Owner: Sam | Pets: Biscuit, Mochi
+------------------------------------------------------------------------
+07:00-07:10  Breakfast          Biscuit  high priority, at preferred time
+07:10-07:30  Brushing           Mochi    low priority, earliest free slot
+07:30-08:00  Walk Biscuit       Biscuit  high priority, at preferred time
+08:00-08:05  Thyroid pill       Mochi    high priority, at preferred time
+17:30-17:45  Feather toy play   Mochi    low priority, at preferred time
+18:00-18:40  Evening walk       Biscuit  medium priority, at preferred time
+------------------------------------------------------------------------
+Total scheduled: 120 of 210 free minutes
 ```
 
 ## 📐 Smarter Scheduling

@@ -48,6 +48,7 @@ class TimeWindow:
     end: time
 
     def __post_init__(self) -> None:
+        """Reject windows that end at or before they start."""
         if self.end <= self.start:
             raise ValueError(f"TimeWindow end {self.end} must be after start {self.start}")
 
@@ -57,6 +58,7 @@ class TimeWindow:
         return int(delta.total_seconds() // 60)
 
     def __str__(self) -> str:
+        """Return the window as "HH:MM-HH:MM"."""
         return f"{self.start:%H:%M}-{self.end:%H:%M}"
 
 
@@ -75,6 +77,7 @@ class Task:
     last_completed: date | None = None
 
     def __post_init__(self) -> None:
+        """Reject non-positive durations and unknown frequencies."""
         if self.duration_minutes <= 0:
             raise ValueError("duration_minutes must be positive")
         if self.frequency not in FREQUENCIES:
@@ -173,6 +176,7 @@ class ScheduledItem:
 
     @property
     def end_time(self) -> time | None:
+        """Return when the task finishes, or None if it was skipped."""
         if self.start_time is None:
             return None
         return _add_minutes(self.start_time, self.task.duration_minutes)
@@ -212,6 +216,7 @@ class Scheduler:
     """Builds a DailyPlan from an Owner's tasks and constraints."""
 
     def __init__(self, owner: Owner) -> None:
+        """Create a scheduler for the given owner's pets and free time."""
         self.owner = owner
 
     def get_all_tasks(self) -> list[Task]:
@@ -269,6 +274,7 @@ class Scheduler:
         category_order = self.owner.preferences.get("category_order", [])
 
         def key(task: Task) -> tuple:
+            """Sort key: preferred time first, then category rank, then duration."""
             rank = category_order.index(task.category) if task.category in category_order else len(category_order)
             return (task.preferred_time is None, task.preferred_time or time.max, rank, task.duration_minutes)
 
