@@ -59,8 +59,9 @@ classDiagram
         +get_due_tasks(date day) list~Task~
         +build_daily_plan(date day) DailyPlan
         +sort_by_priority(list~Task~ tasks) list~Task~
-        +fits_in_time(Task task, TimeWindow window, int minutes_used) bool
         +apply_preferences(list~Task~ tasks) list~Task~
+        +fits_in_time(Task task, list~TimeWindow~ windows, list~tuple~ booked) bool
+        +find_slot(Task task, list~TimeWindow~ windows, list~tuple~ booked) time
     }
 
     class ScheduledItem {

@@ -30,6 +30,16 @@ def _add_minutes(t: time, minutes: int) -> time:
     return (datetime.combine(date.min, t) + timedelta(minutes=minutes)).time()
 
 
+def _to_minutes(t: time) -> int:
+    """Return minutes since midnight."""
+    return t.hour * 60 + t.minute
+
+
+def _from_minutes(minutes: int) -> time:
+    """Return the time of day `minutes` after midnight."""
+    return time(minutes // 60, minutes % 60)
+
+
 @dataclass
 class TimeWindow:
     """A block of the day when the owner is free, e.g. 07:00-09:00."""
@@ -216,36 +226,28 @@ class Scheduler:
         """Build the plan for `day` in a fixed order of steps:
 
         1. Keep only tasks that are due on `day`.
-        2. Sort them by priority (sort_by_priority).
-        3. Place each task into the first time window it fits (fits_in_time);
-           tasks that fit nowhere are skipped.
-        4. Order the chosen tasks by preference (apply_preferences).
-           Preferences never bring back a skipped task.
+        2. Order them by priority (sort_by_priority); within the same priority,
+           owner preferences break ties (apply_preferences).
+        3. Book each task, in that order, into a free slot (find_slot): as close
+           as possible to its preferred time, otherwise the earliest free gap.
+           Tasks with no free gap long enough are skipped.
         """
         plan = DailyPlan(date=day)
         windows = sorted(self.owner.available_windows, key=lambda w: w.start)
-        placed: list[list[Task]] = [[] for _ in windows]
-        used = [0] * len(windows)
+        booked: list[tuple[int, int]] = []  # (start, end) in minutes since midnight
 
-        for task in self.sort_by_priority(self.get_due_tasks(day)):
-            for i in self._window_order(task, windows):
-                if self.fits_in_time(task, windows[i], used[i]):
-                    placed[i].append(task)
-                    used[i] += task.duration_minutes
-                    break
-            else:
+        for task in self.sort_by_priority(self.apply_preferences(self.get_due_tasks(day))):
+            start = self.find_slot(task, windows, booked)
+            if start is None:
                 reason = (
                     "no free time windows set"
                     if not windows
-                    else f"not enough free time (needs {task.duration_minutes} min)"
+                    else f"no free gap of {task.duration_minutes} min left"
                 )
                 plan.skipped.append(ScheduledItem(task, None, reason))
-
-        for window, tasks in zip(windows, placed):
-            start = window.start
-            for task in self.apply_preferences(tasks):
-                plan.scheduled.append(ScheduledItem(task, start, self._reason(task, window)))
-                start = _add_minutes(start, task.duration_minutes)
+                continue
+            booked.append((_to_minutes(start), _to_minutes(start) + task.duration_minutes))
+            plan.scheduled.append(ScheduledItem(task, start, self._reason(task, start)))
 
         plan.total_minutes = sum(item.task.duration_minutes for item in plan.scheduled)
         return plan
@@ -253,41 +255,69 @@ class Scheduler:
     def sort_by_priority(self, tasks: list[Task]) -> list[Task]:
         """Return a new list ordered from highest to lowest priority.
 
-        Ties go to the shorter task, so more tasks fit in the day.
+        The sort is stable, so tasks with equal priority keep their incoming order.
         """
-        return sorted(tasks, key=lambda t: (-t.priority_score(), t.duration_minutes))
-
-    def fits_in_time(self, task: Task, window: TimeWindow, minutes_used: int) -> bool:
-        """Return True if the task fits in what is left of the given window."""
-        return minutes_used + task.duration_minutes <= window.minutes()
+        return sorted(tasks, key=lambda t: -t.priority_score())
 
     def apply_preferences(self, tasks: list[Task]) -> list[Task]:
-        """Return a new list of tasks within one window, ordered by owner preferences.
+        """Return a new list of tasks ordered by owner preferences.
 
-        Tasks with a preferred time go first, earliest first; ties (and tasks
-        without one) follow the owner's "category_order" preference, if any.
+        Tasks with a preferred time go first (earliest first), then the owner's
+        "category_order" preference, then shorter tasks. Used as the tie-breaker
+        within a priority level, so preferences never outrank priority.
         """
         category_order = self.owner.preferences.get("category_order", [])
 
         def key(task: Task) -> tuple:
             rank = category_order.index(task.category) if task.category in category_order else len(category_order)
-            return (task.preferred_time is None, task.preferred_time or time.max, rank)
+            return (task.preferred_time is None, task.preferred_time or time.max, rank, task.duration_minutes)
 
         return sorted(tasks, key=key)
 
-    def _window_order(self, task: Task, windows: list[TimeWindow]) -> list[int]:
-        """Window indexes to try for a task: the one containing its preferred time first."""
-        order = list(range(len(windows)))
-        if task.preferred_time is not None:
-            order.sort(key=lambda i: not (windows[i].start <= task.preferred_time < windows[i].end))
-        return order
+    def fits_in_time(self, task: Task, windows: list[TimeWindow], booked: list[tuple[int, int]]) -> bool:
+        """Return True if some free gap in the windows is long enough for the task."""
+        return self.find_slot(task, windows, booked) is not None
 
-    def _reason(self, task: Task, window: TimeWindow) -> str:
-        """Explain why a task was scheduled where it was."""
-        reason = f"{task.priority.name.lower()} priority, fits in {window}"
-        if task.preferred_time is not None:
-            if window.start <= task.preferred_time < window.end:
-                reason += f" (near preferred {task.preferred_time:%H:%M})"
-            else:
-                reason += f" (preferred {task.preferred_time:%H:%M} had no room)"
-        return reason
+    def find_slot(self, task: Task, windows: list[TimeWindow], booked: list[tuple[int, int]]) -> time | None:
+        """Return the best start time for the task, or None if no free gap is long enough.
+
+        With a preferred time, pick the start closest to it (exactly on it if
+        that slot is free). Without one, pick the earliest free gap.
+        """
+        duration = task.duration_minutes
+        target = _to_minutes(task.preferred_time) if task.preferred_time is not None else None
+        best: int | None = None
+        for window in sorted(windows, key=lambda w: w.start):
+            for gap_start, gap_end in self._free_gaps(window, booked):
+                if gap_end - gap_start < duration:
+                    continue
+                if target is None:
+                    return _from_minutes(gap_start)
+                candidate = min(max(target, gap_start), gap_end - duration)
+                if best is None or abs(candidate - target) < abs(best - target):
+                    best = candidate
+        return None if best is None else _from_minutes(best)
+
+    def _free_gaps(self, window: TimeWindow, booked: list[tuple[int, int]]) -> list[tuple[int, int]]:
+        """Return the unbooked (start, end) minute ranges inside a window, in order."""
+        window_start, window_end = _to_minutes(window.start), _to_minutes(window.end)
+        gaps = []
+        cursor = window_start
+        for booked_start, booked_end in sorted(booked):
+            if booked_end <= window_start or booked_start >= window_end:
+                continue
+            if booked_start > cursor:
+                gaps.append((cursor, booked_start))
+            cursor = max(cursor, booked_end)
+        if cursor < window_end:
+            gaps.append((cursor, window_end))
+        return gaps
+
+    def _reason(self, task: Task, start: time) -> str:
+        """Explain why a task was scheduled when it was."""
+        reason = f"{task.priority.name.lower()} priority"
+        if task.preferred_time is None:
+            return reason + ", earliest free slot"
+        if start == task.preferred_time:
+            return reason + ", at preferred time"
+        return reason + f", nearest free slot to preferred {task.preferred_time:%H:%M}"
