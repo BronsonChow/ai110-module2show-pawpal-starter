@@ -171,3 +171,25 @@ def test_detect_conflicts_none_when_tasks_do_not_overlap():
     mochi.add_task(Task("Brushing", "grooming", 20))  # no preferred time, can't clash
 
     assert scheduler.detect_conflicts(date(2026, 10, 25)) == []
+
+
+def test_order_for_booking_priority_first_then_preferences():
+    scheduler, biscuit, _ = make_scheduler()
+    scheduler.owner.preferences["category_order"] = ["meds", "feeding"]
+    tasks = [
+        Task("Low early", "walk", 10, Priority.LOW, preferred_time=time(7, 0)),
+        Task("High untimed feeding", "feeding", 10, Priority.HIGH),
+        Task("High untimed meds", "meds", 10, Priority.HIGH),
+        Task("High late", "walk", 30, Priority.HIGH, preferred_time=time(18, 0)),
+        Task("High early", "walk", 30, Priority.HIGH, preferred_time=time(7, 30)),
+    ]
+
+    result = scheduler.order_for_booking(tasks)
+
+    assert [t.title for t in result] == [
+        "High early",  # priority first, then preferred time
+        "High late",
+        "High untimed meds",  # untimed tasks after timed, by category preference
+        "High untimed feeding",
+        "Low early",  # an early preferred time never beats higher priority
+    ]

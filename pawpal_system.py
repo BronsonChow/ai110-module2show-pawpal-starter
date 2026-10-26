@@ -264,8 +264,8 @@ class Scheduler:
         """Build the plan for `day` in a fixed order of steps:
 
         1. Keep only tasks that are due on `day`.
-        2. Order them by priority (sort_by_priority); within the same priority,
-           owner preferences break ties (apply_preferences).
+        2. Order them by priority; within the same priority, owner preferences
+           break ties (order_for_booking).
         3. Book each task, in that order, into a free slot (find_slot): as close
            as possible to its preferred time, otherwise the earliest free gap.
            Tasks with no free gap long enough are skipped.
@@ -277,7 +277,7 @@ class Scheduler:
         windows = sorted(self.owner.available_windows, key=lambda w: w.start)
         booked: list[tuple[int, int]] = []  # (start, end) in minutes since midnight
 
-        for task in self.sort_by_priority(self.apply_preferences(self.get_due_tasks(day))):
+        for task in self.order_for_booking(self.get_due_tasks(day)):
             start = self.find_slot(task, windows, booked)
             if start is None:
                 reason = (
@@ -351,26 +351,25 @@ class Scheduler:
                 warnings.append(f"Conflict: {clash} - {who}")
         return warnings
 
-    def sort_by_priority(self, tasks: list[Task]) -> list[Task]:
-        """Return a new list ordered from highest to lowest priority.
+    def order_for_booking(self, tasks: list[Task]) -> list[Task]:
+        """Return a new list in the order build_daily_plan books tasks.
 
-        The sort is stable, so tasks with equal priority keep their incoming order.
-        """
-        return sorted(tasks, key=lambda t: -t.priority_score())
-
-    def apply_preferences(self, tasks: list[Task]) -> list[Task]:
-        """Return a new list of tasks ordered by owner preferences.
-
-        Tasks with a preferred time go first (earliest first), then the owner's
-        "category_order" preference, then shorter tasks. Used as the tie-breaker
-        within a priority level, so preferences never outrank priority.
+        Highest priority first. Owner preferences only break ties within a
+        priority level, so they never outrank priority: tasks with a preferred
+        time (earliest first), then the owner's "category_order", then shorter tasks.
         """
         category_order = self.owner.preferences.get("category_order", [])
 
         def key(task: Task) -> tuple:
-            """Sort key: preferred time first, then category rank, then duration."""
+            """Sort key: priority, then preferred time, category rank, duration."""
             rank = category_order.index(task.category) if task.category in category_order else len(category_order)
-            return (task.preferred_time is None, task.preferred_time or time.max, rank, task.duration_minutes)
+            return (
+                -task.priority_score(),
+                task.preferred_time is None,
+                task.preferred_time or time.max,
+                rank,
+                task.duration_minutes,
+            )
 
         return sorted(tasks, key=key)
 
