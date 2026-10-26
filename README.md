@@ -82,12 +82,83 @@ Total scheduled: 120 of 210 free minutes
 
 ## 📐 Smarter Scheduling
 
-| Feature | Method(s) | Notes |
-|---------|-----------|-------|
-| Task sorting | `Scheduler.sort_by_time`, `order_for_booking` | By preferred time (untimed tasks last); the plan books by priority, with preferred time, category preference and duration as tie-breakers |
-| Filtering | `Scheduler.filter_tasks(pet_name=, completed=, day=)`, `get_due_tasks` | Filter by pet and/or done vs. pending on a day; tasks with no free gap left are skipped with a reason |
-| Conflict handling | `Scheduler.detect_conflicts`, `DailyPlan.warnings` | Warns (never crashes) when due tasks' preferred slots overlap; the booking step moves the lower-priority one to the nearest free slot |
-| Recurring tasks | `Scheduler.mark_task_complete`, `Pet.complete_task`, `Task.mark_complete` | Completing a daily/weekly task adds a new copy due `+1 day` / `+1 week` (`timedelta`); "once" tasks don't recur; missed tasks stay due |
+All scheduling logic is in [`pawpal_system.py`](pawpal_system.py). Run `python main.py` to see every feature below in the terminal; the example output in this section comes from that script.
+
+| Feature | Method(s) | In one line |
+|---------|-----------|-------------|
+| Sorting | `Scheduler.sort_by_time()`, `Scheduler.order_for_booking()` | List tasks by time; book them by priority |
+| Filtering | `Scheduler.filter_tasks()`, `Scheduler.get_due_tasks()` | By pet, by done/pending, or both |
+| Conflict detection | `Scheduler.detect_conflicts()`, `DailyPlan.warnings` | Warn about clashing preferred times, never crash |
+| Recurring tasks | `Scheduler.mark_task_complete()`, `Pet.complete_task()`, `Task.mark_complete()` | Completing a daily/weekly task creates the next one |
+
+### Sorting
+
+- **`Scheduler.sort_by_time(tasks)`** returns a new list ordered by each task's `preferred_time`, earliest first. Tasks without a preferred time go last. The sort key is `(preferred_time is None, preferred_time)`. Preferred times are stored as `datetime.time` rather than strings, so they compare correctly with no parsing.
+- **`Scheduler.order_for_booking(tasks)`** sets the order in which `build_daily_plan()` books tasks. It's one sort with the key `(priority, has preferred time, preferred time, category preference, duration)`. Priority always comes first, and the owner's preferences only break ties within a priority level.
+
+Neither method changes a pet's own task list; both return new lists.
+
+```
+Sorted by time (sort_by_time):
+  07:00     Breakfast          Biscuit  pending
+  07:30     Walk Biscuit       Biscuit  pending
+  07:30     Ear drops          Biscuit  pending
+  07:45     Litter box         Mochi    pending
+  ...
+  18:00     Dinner             Mochi    pending
+  any time  Brushing           Mochi    pending
+```
+
+### Filtering
+
+- **`Scheduler.filter_tasks(pet_name=None, completed=None, day=None)`** returns the owner's tasks that match every filter given:
+  - `pet_name="Mochi"`: only that pet's tasks.
+  - `completed=True`: tasks marked done on `day`.
+  - `completed=False`: tasks still pending on `day`.
+  - Filters combine. For example, `filter_tasks(pet_name="Mochi", completed=False)` gives Mochi's to-do list. `day` defaults to today.
+- **`Scheduler.get_due_tasks(day)`** returns only the tasks due on `day`. `build_daily_plan()` uses it, so completed tasks and tasks not due yet never enter the plan.
+- Tasks that don't fit in any free gap are skipped and listed in `DailyPlan.skipped`, with the reason ("no free gap of 40 min left").
+
+```
+Mochi's pending tasks (pet_name='Mochi', completed=False):
+  07:45     Litter box         Mochi    pending
+  17:30     Feather toy play   Mochi    pending
+  18:00     Dinner             Mochi    pending
+  any time  Brushing           Mochi    pending
+```
+
+### Conflict detection
+
+- **`Scheduler.detect_conflicts(day)`** returns a list of warning messages. It never raises an exception. It flags any two due tasks whose preferred time slots (preferred time + duration) overlap, for the same pet or for different pets.
+- **How it works:** it sorts the timed tasks by start time, then compares each task only with the tasks after it, stopping at the first one that starts after it ends. Since the list is sorted, no later task can overlap.
+- **Wording:** tasks that start at exactly the same time get a "both at HH:MM" message. Partial overlaps get an "overlaps" message.
+- **In the plan:** `build_daily_plan()` saves the warnings in **`DailyPlan.warnings`**, which `explain()`, `main.py` and the Streamlit app all show. The plan is still built, and the booking step never double-books. The higher-priority task keeps its slot, and the other moves to the nearest free gap.
+
+```
+Conflict check (detect_conflicts):
+  WARNING Conflict: Walk Biscuit and Ear drops are both at 07:30 - both for Biscuit
+  WARNING Conflict: Walk Biscuit (07:30, 30 min) overlaps Litter box (07:45) - Biscuit and Mochi
+  WARNING Conflict: Evening walk and Dinner are both at 18:00 - Biscuit and Mochi
+```
+
+### Recurring tasks
+
+- **`Scheduler.mark_task_complete(task, day)`** is the single call for completing a task. It finds the task's pet, marks the task done and adds the next copy to that pet. A task that belongs to no pet raises a `ValueError`.
+- **`Pet.complete_task(task, day)`** marks one of the pet's tasks done and adds the next copy to the pet's task list.
+- **`Task.mark_complete(day)`** records the completion and returns the next copy. It uses `dataclasses.replace`, so title, duration, priority, preferred time and pet carry over. The due date is calculated with `timedelta`:
+  - `"daily"`: `day + timedelta(days=1)`
+  - `"weekly"`: `day + timedelta(weeks=1)`
+  - `"once"`: no next copy; returns `None`
+
+  Because this is date arithmetic, month ends, year ends and leap days roll over correctly.
+- **`Task.is_due(day)`** follows one rule for every frequency: a task is due from its due date until it's marked complete. The completed copy is never due again, and the new copy carries the repeat forward. A missed task stays due until it's done, rather than quietly resetting the next day.
+
+```
+Completed Breakfast and Thyroid pill; next breakfast due Monday 26 Oct
+Biscuit's tasks (pet_name='Biscuit'):
+  07:00     Breakfast          Biscuit  done
+  07:00     Breakfast          Biscuit  next due Mon 26 Oct
+```
 
 ## 📸 Demo Walkthrough
 
