@@ -152,3 +152,22 @@ def test_scheduler_mark_task_complete_rejects_unattached_task():
     scheduler, _, _ = make_scheduler()
     with pytest.raises(ValueError):
         scheduler.mark_task_complete(Task("Stray", "other", 5), date(2026, 10, 25))
+
+
+def test_detect_conflicts_same_pet_same_time():
+    scheduler, biscuit, _ = make_scheduler()
+    biscuit.add_task(Task("Walk", "walk", 30, preferred_time=time(7, 30)))
+    biscuit.add_task(Task("Ear drops", "meds", 5, preferred_time=time(7, 30)))
+
+    warnings = scheduler.detect_conflicts(date(2026, 10, 25))
+
+    assert warnings == ["Conflict: Walk and Ear drops are both at 07:30 - both for Biscuit"]
+
+
+def test_detect_conflicts_none_when_tasks_do_not_overlap():
+    scheduler, biscuit, mochi = make_scheduler()
+    biscuit.add_task(Task("Walk", "walk", 30, preferred_time=time(7, 0)))
+    mochi.add_task(Task("Pill", "meds", 5, preferred_time=time(7, 30)))  # starts as walk ends
+    mochi.add_task(Task("Brushing", "grooming", 20))  # no preferred time, can't clash
+
+    assert scheduler.detect_conflicts(date(2026, 10, 25)) == []

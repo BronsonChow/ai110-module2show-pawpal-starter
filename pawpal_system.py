@@ -341,10 +341,14 @@ class Scheduler:
                     if first.pet_name == second.pet_name
                     else f"{first.pet_name} and {second.pet_name}"
                 )
-                warnings.append(
-                    f"Conflict: {first.title} ({first.preferred_time:%H:%M}, {first.duration_minutes} min)"
-                    f" overlaps {second.title} ({second.preferred_time:%H:%M}) - {who}"
-                )
+                if second.preferred_time == first.preferred_time:
+                    clash = f"{first.title} and {second.title} are both at {first.preferred_time:%H:%M}"
+                else:
+                    clash = (
+                        f"{first.title} ({first.preferred_time:%H:%M}, {first.duration_minutes} min)"
+                        f" overlaps {second.title} ({second.preferred_time:%H:%M})"
+                    )
+                warnings.append(f"Conflict: {clash} - {who}")
         return warnings
 
     def sort_by_priority(self, tasks: list[Task]) -> list[Task]:

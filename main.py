@@ -46,7 +46,12 @@ def main() -> None:
     biscuit.schedule_walk(at=time(7, 30), duration=30, priority=Priority.HIGH)
     mochi.add_task(Task("Feather toy play", "enrichment", 15, Priority.LOW, preferred_time=time(17, 30)))
     biscuit.add_task(Task("Breakfast", "feeding", 10, Priority.HIGH, preferred_time=time(7, 0)))
-    # Clashes with Biscuit's 07:30 walk on purpose, to show a conflict warning
+    # Deliberate clashes, to show conflict warnings:
+    # same pet, same time - Biscuit's ear drops at 07:30, same as his walk
+    biscuit.add_task(Task("Ear drops", "meds", 5, Priority.HIGH, preferred_time=time(7, 30)))
+    # different pets, same time - Mochi's dinner at 18:00, same as Biscuit's evening walk
+    mochi.add_task(Task("Dinner", "feeding", 10, Priority.HIGH, preferred_time=time(18, 0)))
+    # different pets, partial overlap - starts during Biscuit's 07:30-08:00 walk
     mochi.add_task(Task("Litter box", "other", 10, Priority.MEDIUM, preferred_time=time(7, 45)))
 
     today = date.today()
@@ -56,6 +61,14 @@ def main() -> None:
     all_tasks = scheduler.get_all_tasks()
     print_tasks("Tasks as added (unsorted):", all_tasks, today)
     print_tasks("Sorted by time (sort_by_time):", scheduler.sort_by_time(all_tasks), today)
+
+    # --- Conflict check: returns warnings, never raises ---
+    print("\nConflict check (detect_conflicts):")
+    conflicts = scheduler.detect_conflicts(today)
+    for warning in conflicts:
+        print(f"  WARNING {warning}")
+    if not conflicts:
+        print("  No conflicts.")
 
     # --- Mark a couple of tasks done so the status filters have something to show ---
     breakfast = next(t for t in biscuit.get_tasks() if t.title == "Breakfast")
