@@ -60,8 +60,8 @@ def main() -> None:
     # --- Mark a couple of tasks done so the status filters have something to show ---
     breakfast = next(t for t in biscuit.get_tasks() if t.title == "Breakfast")
     pill = next(t for t in mochi.get_tasks() if t.title == "Thyroid pill")
-    next_breakfast = biscuit.complete_task(breakfast, today)
-    mochi.complete_task(pill, today)
+    next_breakfast = scheduler.mark_task_complete(breakfast, today)
+    scheduler.mark_task_complete(pill, today)
     print(f"\nCompleted {breakfast.title} and {pill.title}; next breakfast due {next_breakfast.due_date:%A %d %b}")
 
     # --- Filtering (results sorted by time for readability) ---

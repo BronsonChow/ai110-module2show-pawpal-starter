@@ -1,5 +1,7 @@
 from datetime import date, time, timedelta
 
+import pytest
+
 from pawpal_system import Owner, Pet, Priority, Scheduler, Task, TimeWindow
 
 
@@ -126,3 +128,27 @@ def test_conflicts_become_plan_warnings_without_double_booking():
     assert walk.start_time == time(7, 30)
     assert play.start_time != time(7, 30)
     assert "Warnings:" in plan.explain()
+
+
+def test_scheduler_mark_task_complete_adds_next_occurrence_to_pet():
+    scheduler, biscuit, mochi = make_scheduler()
+    walk = Task("Walk", "walk", 30, frequency="daily", preferred_time=time(7, 30))
+    brushing = Task("Brushing", "grooming", 20, frequency="weekly")
+    biscuit.add_task(walk)
+    mochi.add_task(brushing)
+    today = date(2026, 10, 25)
+
+    next_walk = scheduler.mark_task_complete(walk, today)
+    next_brushing = scheduler.mark_task_complete(brushing, today)
+
+    assert next_walk in biscuit.get_tasks() and next_walk.due_date == today + timedelta(days=1)
+    assert next_walk.preferred_time == time(7, 30)  # details carry over
+    assert next_brushing in mochi.get_tasks() and next_brushing.due_date == today + timedelta(weeks=1)
+    assert walk not in scheduler.get_due_tasks(today + timedelta(days=1))
+    assert next_walk in scheduler.get_due_tasks(today + timedelta(days=1))
+
+
+def test_scheduler_mark_task_complete_rejects_unattached_task():
+    scheduler, _, _ = make_scheduler()
+    with pytest.raises(ValueError):
+        scheduler.mark_task_complete(Task("Stray", "other", 5), date(2026, 10, 25))

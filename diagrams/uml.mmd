@@ -58,6 +58,7 @@ classDiagram
         +Owner owner
         +get_all_tasks() list~Task~
         +get_due_tasks(date day) list~Task~
+        +mark_task_complete(Task task, date day) Task
         +build_daily_plan(date day) DailyPlan
         +sort_by_time(list~Task~ tasks) list~Task~
         +filter_tasks(str pet_name, bool completed, date day) list~Task~

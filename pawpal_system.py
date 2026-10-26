@@ -249,6 +249,17 @@ class Scheduler:
         """Retrieve the tasks across all pets that are due on `day`."""
         return [task for task in self.get_all_tasks() if task.is_due(day)]
 
+    def mark_task_complete(self, task: Task, day: date) -> Task | None:
+        """Mark a task done on `day` and add its next occurrence to the same pet.
+
+        Daily tasks come back due the next day, weekly tasks a week later;
+        "once" tasks don't come back. Returns the new task, or None.
+        """
+        pet = self.owner.get_pet(task.pet_name)
+        if pet is None:
+            raise ValueError(f"{task.title!r} doesn't belong to any of {self.owner.name}'s pets")
+        return pet.complete_task(task, day)
+
     def build_daily_plan(self, day: date) -> DailyPlan:
         """Build the plan for `day` in a fixed order of steps:
 

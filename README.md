@@ -87,7 +87,7 @@ Total scheduled: 120 of 210 free minutes
 | Task sorting | `Scheduler.sort_by_time`, `sort_by_priority`, `apply_preferences` | By preferred time (untimed tasks last); the plan books by priority, with preferred time, category preference and duration as tie-breakers |
 | Filtering | `Scheduler.filter_tasks(pet_name=, completed=, day=)`, `get_due_tasks` | Filter by pet and/or done vs. pending on a day; tasks with no free gap left are skipped with a reason |
 | Conflict handling | `Scheduler.detect_conflicts`, `DailyPlan.warnings` | Warns (never crashes) when due tasks' preferred slots overlap; the booking step moves the lower-priority one to the nearest free slot |
-| Recurring tasks | `Task.mark_complete`, `Pet.complete_task` | Completing a daily/weekly task adds a new copy due `+1 day` / `+1 week` (`timedelta`); "once" tasks don't recur; missed tasks stay due |
+| Recurring tasks | `Scheduler.mark_task_complete`, `Pet.complete_task`, `Task.mark_complete` | Completing a daily/weekly task adds a new copy due `+1 day` / `+1 week` (`timedelta`); "once" tasks don't recur; missed tasks stay due |
 
 ## 📸 Demo Walkthrough
 
