@@ -193,3 +193,57 @@ def test_order_for_booking_priority_first_then_preferences():
         "High untimed feeding",
         "Low early",  # an early preferred time never beats higher priority
     ]
+
+
+def test_plan_returns_tasks_in_chronological_order():
+    scheduler, biscuit, mochi = make_scheduler()
+    biscuit.add_task(Task("Walk", "walk", 30, Priority.HIGH, preferred_time=time(8, 30)))
+    mochi.add_task(Task("Brushing", "grooming", 20, Priority.MEDIUM))  # earliest free slot, 07:00
+    mochi.add_task(Task("Play", "enrichment", 15, Priority.LOW, preferred_time=time(7, 30)))
+
+    plan = scheduler.build_daily_plan(date(2026, 10, 25))
+
+    # Booked by priority (Walk first), but returned by start time.
+    assert [item.task.title for item in plan.scheduled] == ["Walk", "Brushing", "Play"]
+    todays = plan.get_todays_tasks()
+    assert [item.task.title for item in todays] == ["Brushing", "Play", "Walk"]
+    assert [item.start_time for item in todays] == [time(7, 0), time(7, 30), time(8, 30)]
+
+
+def test_daily_recurrence_chains_day_after_day():
+    scheduler, biscuit, _ = make_scheduler()
+    walk = Task("Walk", "walk", 30, frequency="daily", preferred_time=time(7, 30))
+    biscuit.add_task(walk)
+    day1 = date(2026, 10, 25)
+    day2, day3 = day1 + timedelta(days=1), day1 + timedelta(days=2)
+
+    walk2 = scheduler.mark_task_complete(walk, day1)
+    walk3 = scheduler.mark_task_complete(walk2, day2)
+
+    assert walk2.due_date == day2 and walk3.due_date == day3
+    assert scheduler.get_due_tasks(day2) == []  # walk2 was done on day 2
+    assert scheduler.get_due_tasks(day3) == [walk3]
+    assert [item.task for item in scheduler.build_daily_plan(day3).scheduled] == [walk3]
+    assert len(biscuit.get_tasks()) == 3
+
+
+def test_detect_conflicts_same_time_different_pets():
+    scheduler, biscuit, mochi = make_scheduler()
+    biscuit.add_task(Task("Walk", "walk", 30, preferred_time=time(7, 30)))
+    mochi.add_task(Task("Pill", "meds", 5, preferred_time=time(7, 30)))
+
+    warnings = scheduler.detect_conflicts(date(2026, 10, 25))
+
+    assert warnings == ["Conflict: Walk and Pill are both at 07:30 - Biscuit and Mochi"]
+
+
+def test_detect_conflicts_flags_every_pair_at_a_duplicate_time():
+    scheduler, biscuit, mochi = make_scheduler()
+    biscuit.add_task(Task("Walk", "walk", 30, preferred_time=time(8, 0)))
+    biscuit.add_task(Task("Breakfast", "feeding", 10, preferred_time=time(8, 0)))
+    mochi.add_task(Task("Pill", "meds", 5, preferred_time=time(8, 0)))
+
+    warnings = scheduler.detect_conflicts(date(2026, 10, 25))
+
+    assert len(warnings) == 3  # Walk/Breakfast, Walk/Pill, Breakfast/Pill
+    assert all("both at 08:00" in w for w in warnings)

@@ -47,26 +47,6 @@ pip install -r requirements.txt
 Paste a sample of your app's CLI or Streamlit output here so a reader can see what a generated plan looks like:
 
 ```
-# e.g.:
-# Daily plan for Biscuit (Golden Retriever):
-#   08:00 — Morning walk (30 min) [priority: high]
-#   09:00 — Feeding (10 min) [priority: high]
-#   ...
-```
-
-## 🧪 Testing PawPal+
-
-```bash
-# Run the full test suite:
-pytest
-
-# Run with coverage:
-pytest --cov
-```
-
-Sample test output:
-
-```
 Today's Schedule - Sunday, October 25, 2026
 Owner: Sam | Pets: Biscuit, Mochi
 ------------------------------------------------------------------------
@@ -79,6 +59,41 @@ Owner: Sam | Pets: Biscuit, Mochi
 ------------------------------------------------------------------------
 Total scheduled: 120 of 210 free minutes
 ```
+
+## 🧪 Testing PawPal+
+
+Run the test suite from the project root:
+
+```bash
+python -m pytest
+```
+
+The tests are in [`tests/test_pawpal.py`](tests/test_pawpal.py) and check the scheduling logic in `pawpal_system.py` (not the Streamlit UI):
+
+- **Sorting:** `sort_by_time()` lists tasks earliest first, with untimed tasks last. `order_for_booking()` puts priority first and uses owner preferences only to break ties. A built plan's `get_todays_tasks()` comes back in start-time order even though tasks are booked by priority.
+- **Recurrence:** completing a daily task creates a copy due the next day, a weekly task a copy due 7 days later, and a "once" task no copy. Completions chain day after day, the new copy shows up in the next day's plan, the completed copy is never due again, and a missed task stays due.
+- **Conflict detection:** `detect_conflicts()` flags tasks at exactly the same time (same pet or different pets) and partial overlaps. Three tasks at one time give one warning per pair. Back-to-back tasks and untimed tasks aren't flagged. Conflicts appear as plan warnings, and the plan never double-books a slot.
+- **Basics and filtering:** marking a task complete, adding tasks to a pet, filtering by pet and done/pending status, and rejecting `mark_task_complete()` for a task that belongs to no pet.
+
+Output of a successful run:
+
+```
+============================= test session starts =============================
+platform win32 -- Python 3.14.8, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\bronc\Documents\GitHub\ai110-module2show-pawpal-starter
+configfile: pytest.ini
+testpaths: tests
+plugins: anyio-4.15.1
+collected 19 items
+
+tests\test_pawpal.py ...................                                 [100%]
+
+============================= 19 passed in 0.04s ==============================
+```
+
+**Confidence level: ★★★★☆ (4/5)**
+
+All 19 tests pass, and they cover the core behaviours: sorting, recurrence, conflict detection, filtering and booking without double-booking. It isn't 5 stars because the Streamlit UI has no automated tests, and some edge cases aren't tested yet, such as several free-time windows, a day too full to fit everything, and date rollovers at month or year ends.
 
 ## 📐 Smarter Scheduling
 
