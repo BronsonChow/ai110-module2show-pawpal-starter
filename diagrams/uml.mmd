@@ -2,6 +2,7 @@ classDiagram
     %% PawPal+ design
     %% Core actions: add a pet (Owner), schedule a walk / any task (Pet + Task),
     %% see today's tasks (Scheduler -> DailyPlan)
+    %% Recurrence: Scheduler.mark_task_complete -> Owner.get_pet -> Pet.complete_task -> Task.mark_complete
 
     class Priority {
         <<enumeration>>
@@ -66,13 +67,15 @@ classDiagram
         +order_for_booking(list~Task~ tasks) list~Task~
         +fits_in_time(Task task, list~TimeWindow~ windows, list~tuple~ booked) bool
         +find_slot(Task task, list~TimeWindow~ windows, list~tuple~ booked) time
+        -_free_gaps(TimeWindow window, list~tuple~ booked) list~tuple~
+        -_reason(Task task, time start) str
     }
 
     class ScheduledItem {
         +Task task
         +time start_time
         +str reason
-        +end_time() time
+        +time end_time
     }
 
     class DailyPlan {
@@ -90,7 +93,25 @@ classDiagram
     Pet "1" --> "*" Task : has
     Task --> Priority : uses
     Task ..> Pet : pet_name refers to
-    Scheduler --> Owner : reads constraints from
+    Task ..> Task : mark_complete creates next occurrence
+    Scheduler "1" --> "1" Owner : reads constraints from
+    Scheduler ..> Pet : mark_task_complete via complete_task
+    Scheduler ..> TimeWindow : books tasks into free gaps
     Scheduler ..> DailyPlan : creates
+    Scheduler ..> ScheduledItem : creates
     DailyPlan "1" --> "*" ScheduledItem : contains
     ScheduledItem --> "1" Task : wraps
+
+    class StreamlitApp {
+        <<UI app.py>>
+    }
+    StreamlitApp --> Owner : keeps in session_state
+    StreamlitApp ..> Scheduler : filter, sort, detect_conflicts, mark complete, build plan
+
+    note for Task "frequency must be daily, weekly or once.
+mark_complete returns None for once tasks."
+    note for Owner "get_pet returns None if no pet has that name"
+    note for Scheduler "find_slot returns None when no free gap is long enough"
+    note for TimeWindow "Raises ValueError if end <= start"
+
+    note for ScheduledItem "end_time is a property: start_time + duration, None if skipped"

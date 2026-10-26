@@ -22,6 +22,29 @@ if "owner" not in st.session_state:
     )
 
 owner: Owner = st.session_state.owner
+scheduler = Scheduler(owner)
+
+
+def task_row(task: Task, day: date) -> dict:
+    """Return one row of the task table."""
+    if task.is_completed_on(day):
+        status = "✅ done"
+    elif task.is_due(day):
+        status = "⏳ pending"
+    elif task.due_date is not None and task.due_date > day:
+        status = f"📅 due {task.due_date:%a %d %b}"
+    else:
+        status = "done earlier"
+    return {
+        "Preferred": f"{task.preferred_time:%H:%M}" if task.preferred_time else "any time",
+        "Task": task.title,
+        "Pet": task.pet_name,
+        "Minutes": task.duration_minutes,
+        "Priority": task.priority.name.lower(),
+        "Frequency": task.frequency,
+        "Status": status,
+    }
+
 
 with st.sidebar:
     st.header("Session")
@@ -123,22 +146,52 @@ else:
         except ValueError as err:
             st.error(str(err))
 
-    all_tasks = owner.get_all_tasks()
-    if all_tasks:
-        st.table(
-            [
-                {
-                    "Pet": t.pet_name,
-                    "Task": t.title,
-                    "Category": t.category,
-                    "Minutes": t.duration_minutes,
-                    "Priority": t.priority.name.lower(),
-                    "Preferred": f"{t.preferred_time:%H:%M}" if t.preferred_time else "-",
-                    "Frequency": t.frequency,
-                }
-                for t in all_tasks
-            ]
+    today = date.today()
+    if owner.get_all_tasks():
+        # Filter with Scheduler.filter_tasks, then list by time with Scheduler.sort_by_time.
+        col1, col2 = st.columns(2)
+        pet_filter = col1.selectbox("Show pet", ["All pets"] + [p.name for p in owner.pets])
+        status_filter = col2.radio("Status", ["All", "Pending", "Done today"], horizontal=True)
+        tasks = scheduler.filter_tasks(
+            pet_name=None if pet_filter == "All pets" else pet_filter,
+            completed={"All": None, "Pending": False, "Done today": True}[status_filter],
+            day=today,
         )
+
+        if tasks:
+            st.table([task_row(t, today) for t in scheduler.sort_by_time(tasks)])
+        else:
+            st.info("No tasks match these filters.")
+
+        # Mark a task done; daily/weekly tasks come back on their next due date.
+        pending = scheduler.sort_by_time(scheduler.get_due_tasks(today))
+        if pending:
+            col1, col2 = st.columns([4, 1])
+            to_complete = col1.selectbox(
+                "Mark a task done",
+                range(len(pending)),
+                format_func=lambda i: f"{pending[i].title} ({pending[i].pet_name})",
+            )
+            col2.write("")
+            if col2.button("Done"):
+                task = pending[to_complete]
+                next_task = scheduler.mark_task_complete(task, today)
+                message = f"Completed '{task.title}'."
+                if next_task is not None:
+                    message += f" Next one due {next_task.due_date:%a %d %b}."
+                st.session_state.completed_message = message
+                st.rerun()  # redraw the table above with the new status
+        if "completed_message" in st.session_state:
+            st.success(st.session_state.pop("completed_message"))
+
+        # Live conflict check with Scheduler.detect_conflicts.
+        conflicts = scheduler.detect_conflicts(today)
+        if conflicts:
+            for conflict in conflicts:
+                st.warning(conflict, icon="⚠️")
+            st.caption("The schedule still gets built: the higher-priority task keeps its time, the other moves.")
+        else:
+            st.success("No time conflicts between today's tasks.", icon="✅")
     else:
         st.info("No tasks yet. Add one above.")
 
@@ -149,15 +202,20 @@ st.subheader("Today's Schedule")
 plan_day = st.date_input("Plan for", value=date.today())
 
 if st.button("Generate schedule", type="primary"):
-    plan = Scheduler(owner).build_daily_plan(plan_day)
+    plan = scheduler.build_daily_plan(plan_day)
 
     if plan.scheduled:
+        if plan.skipped:
+            st.warning(f"Scheduled {len(plan.scheduled)} tasks; {len(plan.skipped)} didn't fit.")
+        else:
+            st.success(f"Every due task fits into your free time ({len(plan.scheduled)} scheduled).")
         st.table(
             [
                 {
                     "Time": f"{item.start_time:%H:%M}-{item.end_time:%H:%M}",
                     "Task": item.task.title,
                     "Pet": item.task.pet_name,
+                    "Priority": item.task.priority.name.lower(),
                     "Why": item.reason,
                 }
                 for item in plan.get_todays_tasks()
@@ -170,10 +228,16 @@ if st.button("Generate schedule", type="primary"):
         st.info("Nothing scheduled. Add pets, tasks, and free time first.")
 
     for warning in plan.warnings:
-        st.warning(warning)
+        st.warning(warning, icon="⚠️")
 
-    for item in plan.skipped:
-        st.warning(f"Skipped **{item.task.title}** ({item.task.pet_name}): {item.reason}")
+    if plan.skipped:
+        st.markdown("**Skipped**")
+        st.table(
+            [
+                {"Task": item.task.title, "Pet": item.task.pet_name, "Reason": item.reason}
+                for item in plan.skipped
+            ]
+        )
 
     with st.expander("Plan explanation"):
         st.text(plan.explain())
