@@ -95,6 +95,12 @@ tests\test_pawpal.py ...................                                 [100%]
 
 All 19 tests pass, and they cover the core behaviours: sorting, recurrence, conflict detection, filtering and booking without double-booking. It isn't 5 stars because the Streamlit UI has no automated tests, and some edge cases aren't tested yet, such as several free-time windows, a day too full to fit everything, and date rollovers at month or year ends.
 
+## 🗺️ System Design
+
+The class diagram below shows how `Owner`, `Pet`, `Task`, `Scheduler` and `DailyPlan` fit together. The arrows show the recurrence chain (`Scheduler` → `Pet.complete_task` → `Task.mark_complete`), which classes `Scheduler` reads and creates, and how the Streamlit app uses them. The Mermaid source is [`diagrams/uml.mmd`](diagrams/uml.mmd).
+
+![UML class diagram](diagrams/uml.png)
+
 ## 📐 Smarter Scheduling
 
 All scheduling logic is in [`pawpal_system.py`](pawpal_system.py). Run `python main.py` to see every feature below in the terminal; the example output in this section comes from that script.
@@ -177,12 +183,83 @@ Biscuit's tasks (pet_name='Biscuit'):
 
 ## 📸 Demo Walkthrough
 
-Describe your app in numbered steps so a reader can follow along without watching a video:
+Start the app with `streamlit run app.py`, or run `python main.py` for a terminal demo with sample data.
 
-1. <!-- Describe this step -->
-2. <!-- Describe this step -->
-3. <!-- Describe this step -->
-4. <!-- Describe this step -->
-5. <!-- Add more steps as needed -->
+### Main UI features
 
-**Screenshot or video** *(optional)*: <!-- Insert a screenshot or link to a demo video here -->
+The app is one page with four sections, top to bottom:
+
+| Section | What you can do |
+|---------|-----------------|
+| **Owner** | Change the owner's name. Add or remove the free-time windows the scheduler can book into (default 07:00-09:00 and 17:30-19:00). Choose a category preference order, which breaks ties between tasks with the same priority. |
+| **Pets** | Add a pet with a name, species and age. Pets appear in a table with their task counts. Duplicate names are rejected with an error. |
+| **Tasks** | Add a task for a pet with a title, category, duration, priority, frequency (daily / weekly / once) and an optional preferred time. Filter the task table by pet and by status (All / Pending / Done today). Mark a task done. A live conflict check sits underneath. |
+| **Today's Schedule** | Pick a date and click **Generate schedule** to see the plan as a table, a summary banner, any conflict warnings, a table of skipped tasks, and a "Plan explanation" expander with the full text explanation. |
+
+The sidebar has a **Reset everything** button that clears the session and starts over.
+
+### Example workflow
+
+1. **Set your free time.** Keep the default windows, or add one (e.g. 12:00-13:00) under *Owner*.
+2. **Add a pet.** Enter "Biscuit", choose "dog", and click **Add pet**. Biscuit appears in the pets table.
+3. **Schedule tasks.** Under *Tasks*, add "Morning walk" for Biscuit: walk, 30 min, high priority, daily, preferred time 07:30. Then add "Ear drops": meds, 5 min, high priority, also at 07:30.
+4. **See the conflict.** A warning appears straight away: *Conflict: Morning walk and Ear drops are both at 07:30 - both for Biscuit*.
+5. **View today's schedule.** Click **Generate schedule**. Both tasks are booked without overlapping: one stays at 07:30 and the other moves to the nearest free slot. The "Why" column explains each placement.
+6. **Mark a task done.** Choose "Morning walk" in *Mark a task done* and click **Done**. You'll see *Completed 'Morning walk'. Next one due Mon 26 Oct.*, and the table shows the done task plus its next occurrence.
+7. **Filter.** Set *Status* to "Pending" to see only what's left today, or pick a pet to see only that pet's tasks.
+
+### Key Scheduler behaviors shown
+
+- **Sorting:** the task table is ordered by preferred time with `sort_by_time()` (untimed tasks last). The schedule is shown in time order, even though tasks are booked by priority (`order_for_booking()`).
+- **Filtering:** the pet and status filters use `filter_tasks()`. Only tasks due on the chosen day reach the plan (`get_due_tasks()`).
+- **Conflict warnings:** `detect_conflicts()` flags same-time and overlapping preferred times, for the same pet or for different pets, with `st.warning`. When there are none, it says so with `st.success`. The plan is still built and never double-books a slot.
+- **Recurring tasks:** `mark_task_complete()` marks a task done and adds its next copy: tomorrow for daily tasks, in a week for weekly tasks, none for "once" tasks.
+- **Fitting into free time:** each task goes to its preferred time if free, otherwise the nearest free gap. Tasks that don't fit are listed as skipped, with the reason.
+
+### Sample CLI output (`python main.py`)
+
+An excerpt; the full output also shows each filter on its own.
+
+```
+Sorted by time (sort_by_time):
+  07:00     Breakfast          Biscuit  pending
+  07:30     Walk Biscuit       Biscuit  pending
+  07:30     Ear drops          Biscuit  pending
+  07:45     Litter box         Mochi    pending
+  08:00     Thyroid pill       Mochi    pending
+  17:30     Feather toy play   Mochi    pending
+  18:00     Evening walk       Biscuit  pending
+  18:00     Dinner             Mochi    pending
+  any time  Brushing           Mochi    pending
+
+Conflict check (detect_conflicts):
+  WARNING Conflict: Walk Biscuit and Ear drops are both at 07:30 - both for Biscuit
+  WARNING Conflict: Walk Biscuit (07:30, 30 min) overlaps Litter box (07:45) - Biscuit and Mochi
+  WARNING Conflict: Evening walk and Dinner are both at 18:00 - Biscuit and Mochi
+
+Completed Breakfast and Thyroid pill; next breakfast due Monday 26 Oct
+
+Mochi's pending tasks (pet_name='Mochi', completed=False):
+  07:45     Litter box         Mochi    pending
+  17:30     Feather toy play   Mochi    pending
+  18:00     Dinner             Mochi    pending
+  any time  Brushing           Mochi    pending
+
+Today's Schedule - Sunday, October 25, 2026
+Owner: Sam | Pets: Biscuit, Mochi
+------------------------------------------------------------------------
+07:00-07:20  Brushing           Mochi    low priority, earliest free slot
+07:30-07:35  Ear drops          Biscuit  high priority, at preferred time
+07:35-08:05  Walk Biscuit       Biscuit  high priority, nearest free slot to preferred 07:30
+08:05-08:15  Litter box         Mochi    medium priority, nearest free slot to preferred 07:45
+17:30-17:45  Feather toy play   Mochi    low priority, at preferred time
+18:00-18:10  Dinner             Mochi    high priority, at preferred time
+18:10-18:50  Evening walk       Biscuit  medium priority, nearest free slot to preferred 18:00
+------------------------------------------------------------------------
+Total scheduled: 130 of 210 free minutes
+
+Warnings:
+  Conflict: Walk Biscuit and Ear drops are both at 07:30 - both for Biscuit
+  Conflict: Walk Biscuit (07:30, 30 min) overlaps Litter box (07:45) - Biscuit and Mochi
+  Conflict: Evening walk and Dinner are both at 18:00 - Biscuit and Mochi
+```
