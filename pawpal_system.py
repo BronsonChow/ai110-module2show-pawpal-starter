@@ -10,11 +10,12 @@ Classes mirror diagrams/uml.mmd:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta
 from enum import Enum
 
 FREQUENCIES = ("daily", "weekly", "once")
+RECURRENCE = {"daily": timedelta(days=1), "weekly": timedelta(weeks=1)}  # "once" never recurs
 
 
 class Priority(Enum):
@@ -83,21 +84,29 @@ class Task:
         if self.frequency not in FREQUENCIES:
             raise ValueError(f"frequency must be one of {FREQUENCIES}, got {self.frequency!r}")
 
-    def mark_complete(self, day: date) -> None:
-        """Record that this task was done on the given day."""
+    def mark_complete(self, day: date) -> Task | None:
+        """Record that this task was done on `day` and return its next occurrence.
+
+        Daily and weekly tasks return a fresh copy due one day / one week after
+        `day` (use Pet.complete_task to add it to the pet). "once" tasks return None.
+        """
         self.last_completed = day
+        step = RECURRENCE.get(self.frequency)
+        if step is None:
+            return None
+        return replace(self, due_date=day + step, last_completed=None)
 
     def is_completed_on(self, day: date) -> bool:
         """Return True if this task was marked complete on the given day."""
         return self.last_completed == day
 
     def is_due(self, day: date) -> bool:
-        """Return True if this task needs doing on the given day (based on frequency)."""
-        if self.frequency == "daily":
-            return self.last_completed != day
-        if self.frequency == "weekly":
-            return self.last_completed is None or (day - self.last_completed).days >= 7
-        # "once": due on/after its due date until it has been done
+        """Return True if this task still needs doing on the given day.
+
+        A task is due from its due date (or right away if it has none) until it
+        is marked complete. Recurrence is handled by the next occurrence that
+        mark_complete creates, so a completed task is never due again.
+        """
         if self.last_completed is not None:
             return False
         return self.due_date is None or self.due_date <= day
@@ -136,6 +145,15 @@ class Pet:
     def get_tasks(self) -> list[Task]:
         """Return this pet's tasks."""
         return list(self.tasks)
+
+    def complete_task(self, task: Task, day: date) -> Task | None:
+        """Mark one of this pet's tasks done on `day` and add its next occurrence, if any."""
+        if task not in self.tasks:
+            raise ValueError(f"{task.title!r} is not one of {self.name}'s tasks")
+        next_task = task.mark_complete(day)
+        if next_task is not None:
+            self.add_task(next_task)
+        return next_task
 
 
 @dataclass
@@ -189,6 +207,7 @@ class DailyPlan:
     date: date
     scheduled: list[ScheduledItem] = field(default_factory=list)
     skipped: list[ScheduledItem] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)  # e.g. clashing preferred times
     total_minutes: int = 0
 
     def get_todays_tasks(self) -> list[ScheduledItem]:
@@ -209,6 +228,9 @@ class DailyPlan:
             lines.append("Skipped:")
             for item in self.skipped:
                 lines.append(f"  {item.task.title} [{item.task.pet_name}] - {item.reason}")
+        if self.warnings:
+            lines.append("Warnings:")
+            lines.extend(f"  {warning}" for warning in self.warnings)
         return "\n".join(lines)
 
 
@@ -236,8 +258,11 @@ class Scheduler:
         3. Book each task, in that order, into a free slot (find_slot): as close
            as possible to its preferred time, otherwise the earliest free gap.
            Tasks with no free gap long enough are skipped.
+
+        Clashing preferred times are recorded as plan warnings (detect_conflicts);
+        the booking step itself never double-books a slot.
         """
-        plan = DailyPlan(date=day)
+        plan = DailyPlan(date=day, warnings=self.detect_conflicts(day))
         windows = sorted(self.owner.available_windows, key=lambda w: w.start)
         booked: list[tuple[int, int]] = []  # (start, end) in minutes since midnight
 
@@ -256,6 +281,60 @@ class Scheduler:
 
         plan.total_minutes = sum(item.task.duration_minutes for item in plan.scheduled)
         return plan
+
+    def sort_by_time(self, tasks: list[Task]) -> list[Task]:
+        """Return a new list ordered by preferred time, earliest first.
+
+        Tasks without a preferred time go last, in their incoming order.
+        """
+        return sorted(tasks, key=lambda t: (t.preferred_time is None, t.preferred_time or time.max))
+
+    def filter_tasks(
+        self,
+        pet_name: str | None = None,
+        completed: bool | None = None,
+        day: date | None = None,
+    ) -> list[Task]:
+        """Return the owner's tasks matching every filter given.
+
+        pet_name: only that pet's tasks.
+        completed: True for tasks marked done on `day`, False for tasks still
+        pending on `day`. `day` defaults to today.
+        """
+        day = day or date.today()
+        tasks = self.get_all_tasks()
+        if pet_name is not None:
+            tasks = [t for t in tasks if t.pet_name == pet_name]
+        if completed is True:
+            tasks = [t for t in tasks if t.is_completed_on(day)]
+        elif completed is False:
+            tasks = [t for t in tasks if t.is_due(day)]
+        return tasks
+
+    def detect_conflicts(self, day: date) -> list[str]:
+        """Return a warning for each pair of due tasks whose preferred slots overlap.
+
+        Only tasks with a preferred time can clash. This never raises: the plan
+        still gets built, and build_daily_plan moves one of the pair to the
+        nearest free slot.
+        """
+        timed = self.sort_by_time([t for t in self.get_due_tasks(day) if t.preferred_time is not None])
+        warnings = []
+        for i, first in enumerate(timed):
+            first_end = _to_minutes(first.preferred_time) + first.duration_minutes
+            for second in timed[i + 1:]:
+                if _to_minutes(second.preferred_time) >= first_end:
+                    break  # sorted by start, so no later task can overlap `first`
+                who = (
+                    f"both for {first.pet_name}"
+                    if first.pet_name == second.pet_name
+                    else f"{first.pet_name} and {second.pet_name}"
+                )
+                warnings.append(
+                    f"Conflict: {first.title} ({first.preferred_time:%H:%M}, {first.duration_minutes} min)"
+                    f" overlaps {second.title} ({second.preferred_time:%H:%M}) - {who}"
+                )
+        return warnings
 
     def sort_by_priority(self, tasks: list[Task]) -> list[Task]:
         """Return a new list ordered from highest to lowest priority.

@@ -169,6 +169,9 @@ if st.button("Generate schedule", type="primary"):
     else:
         st.info("Nothing scheduled. Add pets, tasks, and free time first.")
 
+    for warning in plan.warnings:
+        st.warning(warning)
+
     for item in plan.skipped:
         st.warning(f"Skipped **{item.task.title}** ({item.task.pet_name}): {item.reason}")
 

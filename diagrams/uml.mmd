@@ -35,6 +35,7 @@ classDiagram
         +add_task(Task task) None
         +schedule_walk(time at, int duration, Priority priority) Task
         +get_tasks() list~Task~
+        +complete_task(Task task, date day) Task
     }
 
     class Task {
@@ -47,7 +48,7 @@ classDiagram
         +str frequency
         +date due_date
         +date last_completed
-        +mark_complete(date day) None
+        +mark_complete(date day) Task
         +is_completed_on(date day) bool
         +is_due(date day) bool
         +priority_score() int
@@ -58,6 +59,9 @@ classDiagram
         +get_all_tasks() list~Task~
         +get_due_tasks(date day) list~Task~
         +build_daily_plan(date day) DailyPlan
+        +sort_by_time(list~Task~ tasks) list~Task~
+        +filter_tasks(str pet_name, bool completed, date day) list~Task~
+        +detect_conflicts(date day) list~str~
         +sort_by_priority(list~Task~ tasks) list~Task~
         +apply_preferences(list~Task~ tasks) list~Task~
         +fits_in_time(Task task, list~TimeWindow~ windows, list~tuple~ booked) bool
@@ -75,6 +79,7 @@ classDiagram
         +date date
         +list~ScheduledItem~ scheduled
         +list~ScheduledItem~ skipped
+        +list~str~ warnings
         +int total_minutes
         +get_todays_tasks() list~ScheduledItem~
         +explain() str
